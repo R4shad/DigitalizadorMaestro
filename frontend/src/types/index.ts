@@ -1,3 +1,17 @@
+export type DimensionType =
+  | 'SER'
+  | 'SABER'
+  | 'HACER'
+  | 'AUTOEVALUACION'
+  | 'CUSTOM'
+
+export interface DimensionRule {
+  type: DimensionType
+  min: number
+  max: number
+  label: string
+}
+
 export interface ExcelRosterStudent {
   row_number: number
   student_id?: string
@@ -21,6 +35,12 @@ export interface MatchedStudentGrade {
   scores: Record<string, number | null>
   confidence: number
   matched_ocr_text?: string
+}
+
+export interface ColumnMappingConfig {
+  ocrColumn: string
+  excelColumn: string
+  dimension: DimensionType
 }
 
 export interface ProcessGradesResponse {

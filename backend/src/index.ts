@@ -2,8 +2,17 @@ import express, { Request, Response } from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import dotenv from 'dotenv'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import os from 'node:os'
 import { ExcelService, SheetAnalysis } from './services/excel.service.ts'
 import { OcrService } from './services/ocr.service.ts'
+import {
+  PowerShellService,
+  ColumnTargetMapping,
+  StudentRowUpdate,
+} from './services/powershell.service.ts'
+
 dotenv.config()
 
 const app = express()
@@ -15,6 +24,7 @@ app.use(express.json())
 const upload = multer({ storage: multer.memoryStorage() })
 const excelService = new ExcelService()
 const ocrService = new OcrService()
+const powershellService = new PowerShellService()
 
 app.post(
   '/api/inspect-excel',
@@ -41,7 +51,7 @@ app.post(
   '/api/process-grades',
   upload.fields([
     { name: 'excel', maxCount: 1 },
-    { name: 'images', maxCount: 5 },
+    { name: 'images', maxCount: 10 },
   ]),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -91,7 +101,7 @@ app.post(
 )
 
 app.post(
-  '/api/export-excel',
+  '/api/inject-direct-excel',
   upload.single('template'),
   async (req: Request, res: Response): Promise<void> => {
     try {
@@ -101,19 +111,28 @@ app.post(
       }
 
       const { sheet_name, column_mappings, students } = req.body
-      const parsedMappings =
+      const parsedMappings: ColumnTargetMapping[] =
         typeof column_mappings === 'string'
           ? JSON.parse(column_mappings)
           : column_mappings
-      const parsedStudents =
+      const parsedStudents: StudentRowUpdate[] =
         typeof students === 'string' ? JSON.parse(students) : students
 
-      const outputBuffer = await excelService.injectScores(
-        req.file.buffer,
+      const tempFilePath = path.join(
+        os.tmpdir(),
+        `temp_template_${Date.now()}.xlsx`,
+      )
+      await fs.writeFile(tempFilePath, req.file.buffer)
+
+      await powershellService.injectViaCom(
+        tempFilePath,
         sheet_name,
         parsedMappings,
         parsedStudents,
       )
+
+      const updatedBuffer = await fs.readFile(tempFilePath)
+      await fs.unlink(tempFilePath).catch(() => {})
 
       res.setHeader(
         'Content-Type',
@@ -121,9 +140,9 @@ app.post(
       )
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename=calificaciones_${Date.now()}.xlsx`,
+        `attachment; filename=calificaciones_actualizadas_${Date.now()}.xlsx`,
       )
-      res.send(outputBuffer)
+      res.send(updatedBuffer)
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Internal Server Error'
